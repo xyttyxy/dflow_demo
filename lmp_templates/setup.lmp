@@ -1,0 +1,98 @@
+# -*- lammps -*-
+log             log.impact
+echo            log
+
+# python script to remove o2 molecules
+python cleanup_o2 input 1 SELF format p file cleanup.py
+
+# projectile energetics
+variable        mo                  equal 16
+# for 400 eV: -694.54 A/ps
+variable        vz                  equal "-sqrt(2*v_ke_ev * 1.602e-19 / (v_mo * 1.6605e-27)) * 1e10 / 1e12"
+# for 353K, 7.42 A/ps
+variable        vboltzmann          equal "sqrt(3*8.314*v_target_temp/v_mo*1e3)*1e10/1e12" # rms speed
+variable        vxy                 equal "v_vboltzmann"
+variable        vzn                 equal "-v_vboltzmann"
+
+# deposition frequency
+#  1) total number of ions
+#  2) steps to run between successive ion impacts
+#  3) ratio of neutral to ion
+
+#               ID                        value                                 default
+variable        N_ion               equal 100                  #                100
+variable        Dt_i                equal 10000                #                10000
+variable        N_neu               equal ${n2i}*${N_ion}
+variable        Dt_n                equal ${Dt_i}/${n2i}
+
+# params controlling
+#  1) number of impacts per region boundary shift
+#  2) total number of shifts, 
+#     calculated from number of impacts and above
+#  3) number of steps per shift
+
+#               ID                        value                                   default   comment
+variable        N_i_sft             equal 10                      #               10
+variable        N_sft               equal ${N_ion}/${N_i_sft}     #               N/A       check is integer!
+
+# exclude some atoms in the thick substrate to speed up simulation
+# params controlling
+#  1) start of frozen region below the lowest oxygen atom
+#  2) start of deposition region above the highest copper atom
+#  3) height of deposition region i.e. start of cleanup region 
+#     near the top of the box
+#  4) z vector length of the box
+#  5) bottom of all of slab
+variable        topoffrozen         equal 18
+variable        dz_frozen           equal 10
+variable        dz_buff             equal 10
+variable        dz_depo             equal 5
+variable        topofbox            equal 100 # giving huge height so never overflow through the top of box
+variable        botofslab           equal 8.00
+read_restart    restart.equil remap
+change_box      all z final 0 ${topofbox}
+# info            all out log
+
+reset_timestep  0
+restart         0
+restart         10000 restart.temp.1 restart.temp.2
+restart         100000 restart.*.run
+
+pair_style      hybrid/overlay hdnnp 6.001 dir "/ocean/projects/che170038p/xyttyxyx/hddnp/cuo_400eV/networks/physinformed" cfenergy 1.00 cflength 1.00 showew no showewsum 0 maxew 5000 resetew yes zbl 0.0001 1.4324
+pair_coeff      1 2 zbl 29.0 8.0  # nuclear charge of cu and o
+pair_coeff      * * hdnnp Cu O     # no need to convert distance
+
+neighbor        2 bin
+
+# compute the boundary between deposition/thermostat
+group           copper type 1
+compute         zpos_cu copper property/atom id z # z coordinates of copper atoms
+compute         zmax_cu copper reduce max c_zpos_cu[2] # maximum of zpos
+variable        zmax_cu equal c_zmax_cu # only variable can be used in region definitions
+compute         zmin_cu copper reduce min c_zpos_cu[2] # maximum of zpos
+variable        zmin_cu equal c_zmin_cu # only variable can be used in region definitions
+
+group           ion_and_neu type 2
+compute         zpos_o ion_and_neu property/atom id z # z coordinates of copper atoms
+compute         zmax_o   ion_and_neu reduce max c_zpos_o[2] # minimum of zpos_o
+variable        zmax_o equal c_zmax_o # only variable can be used in region definitions
+compute         zmin_o   ion_and_neu reduce min c_zpos_o[2] # minimum of zpos_o
+variable        zmin_o equal c_zmin_o # only variable can be used in region definitions
+
+# fix the center of system to prevent flying icecube effect
+fix             sub_xy all momentum 100 linear 1 1 0
+
+thermo_modify   lost/bond ignore lost warn flush yes
+thermo          1
+dump            HIGH_FREQ all custom 100 dump.high_freq id type x y z vx vy vz
+dump_modify     HIGH_FREQ sort id
+dump            LOW_FREQ all custom 10000 dump.low_freq id type x y z vx vy vz
+dump_modify     LOW_FREQ sort id
+
+# heat bath should not apply to the frozen atoms since it scales the 0 velocities, 
+# causing undefined behavior
+# other atoms will not influence them since neighbor list is swithced off
+
+# evaluate everything up to this point
+thermo_style    custom v_zmax_cu v_zmin_cu v_zmax_o v_zmin_o
+run 0

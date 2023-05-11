@@ -1,0 +1,13 @@
+processors      {proc_map}
+variable        ke_ev               equal {ion_energy}
+variable        target_temp         equal {thermostat_t}
+variable        n2i                 equal {n2i_ratio}
+
+include setup.lmp
+include loop_shift_before_run.lmp
+
+{fix_deposit_ion}
+{fix_deposit_neutral}
+
+include loop_run.lmp
+include loop_shift_after_run.lmp

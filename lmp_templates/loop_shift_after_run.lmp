@@ -1,0 +1,44 @@
+# after run finished, clean up regions, groups and fixes that need to be updated
+region          top_evap     delete
+region          top_depo     delete
+region          substrate_r  delete
+region          bot          delete
+region          edge_x0      delete
+region          edge_x1      delete
+region          edge_y0      delete
+region          edge_y1      delete
+region          frozen_r     delete
+region          not_frozen_r delete
+
+unfix           new_ion
+unfix           new_neu
+unfix           fix_temp_x0
+unfix           fix_temp_x1
+unfix           fix_temp_y0
+unfix           fix_temp_y1
+unfix           not_frozen_nve
+unfix           ion_and_neu_nve
+unfix           frozen_f
+unfix           sub_recenter
+unfix           clean_top
+unfix           clean_bot
+
+uncompute       sub_temp
+
+group           bath_x0      delete
+group           bath_x1      delete
+group           bath_y0      delete
+group           bath_y1      delete
+group           frozen_g     delete
+group           not_frozen_all delete
+group           not_frozen_cu  delete
+group           substrate_g  delete
+
+# unset neighbor list
+neigh_modify    every 1 delay 0 check no exclude none
+
+if "${SHIFT_COUNT} > ${N_sft}" then "jump SELF SHIFT_LOOP_BREAK"
+next            SHIFT_COUNT
+jump            loop_shift_before_run.lmp SHIFT_LOOP_START
+
+label           SHIFT_LOOP_BREAK

@@ -1,0 +1,25 @@
+run 0
+# thermo_style    custom step time temp c_sub_temp etotal pe ke dt v_zmax_cu v_zmin_cu v_zmax_o v_zmin_o
+thermo_style    custom step time temp etotal pe ke dt v_zmax_cu v_zmin_cu v_zmax_o v_zmin_o
+
+# inner loop
+# within the outer loop, N_i_sft ions will be deposited
+# each ion deposition event has Dt_i steps before next ion is deposited
+variable        n_stp_small_dt      equal 0.2*${Dt_i}
+variable        n_stp_large_dt      equal 0.8*${Dt_i}
+
+variable 	DT_LOOP_COUNT loop ${N_sft}
+label 	        DT_LOOP_START
+
+fix             fix_dt_small substrate_g dt/reset 10 0.00001 0.001 0.01
+run             ${n_stp_small_dt} # default: 2000 steps
+unfix           fix_dt_small
+
+fix             fix_dt_large substrate_g dt/reset 10 0.00001 0.001 0.03
+run             ${n_stp_large_dt} # default: 8000 steps
+unfix           fix_dt_large
+
+if "${DT_LOOP_COUNT} > ${N_i_sft}" then "jump SELF DT_LOOP_BREAK"
+next            DT_LOOP_COUNT
+jump            SELF DT_LOOP_START
+label           DT_LOOP_BREAK

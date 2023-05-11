@@ -1,0 +1,76 @@
+#######################
+# beginning of outer (shift) loop body
+#######################
+variable 	    SHIFT_COUNT loop ${N_sft}
+label 		    SHIFT_LOOP_START
+
+# update some variables
+# calculate the deposition and slab regions based on the zmax_cu value
+# top of deposition region is 8A above zmax_cu, unless it is higher than 49 where it is set to 49
+# top of slab is 4A above zmax_cu, unless it is higher than 45 where it is set to 45
+# so that 4 A always exists for deposition region, unless vacuum is almost full, at which point simulation should be stopped and vacuum increased. 
+# dz_frozen is the diff in z btwn the lowest O atom and the heighest frozen atom
+# if fresh cu underneath is more than 10 A thick, do not freeze any atoms
+variable botofdepo equal ${zmax_cu}+${dz_buff}
+variable topofdepo equal ${zmax_cu}+${dz_buff}+${dz_depo}
+variable tmp equal ${zmin_o}-${zmin_cu}
+if "${zmin_o} > 10000" then &
+ "variable topoffrozen equal ${zmax_cu}-${dz_frozen}" &
+elif "${tmp} > ${dz_frozen}" &
+ "variable topoffrozen equal ${zmin_o}-${dz_frozen}" & 
+else &
+ "variable topoffrozen equal ${zmin_o}-${dz_frozen}"
+
+# initialize regions and groups
+#  1) slab must include all atoms so that slab is moved as a whole
+#     if only the top part is moved the top would bump into the bottom
+#     because as it grows during deposition, half of the thickness increase
+#     will be placed on the bottom direction due to fix recenter
+region          substrate_r   block EDGE EDGE EDGE EDGE ${topoffrozen} ${botofdepo}
+region          top_evap      block EDGE EDGE EDGE EDGE ${topofdepo} EDGE
+region          top_depo      block EDGE EDGE EDGE EDGE ${botofdepo} ${topofdepo}
+region          bot           block EDGE EDGE EDGE EDGE EDGE ${botofslab}
+region          frozen_r      block EDGE EDGE EDGE EDGE EDGE ${topoffrozen}
+region          not_frozen_r  block EDGE EDGE EDGE EDGE ${topoffrozen} EDGE
+region          edge_x0       block EDGE 2 EDGE EDGE ${topoffrozen} EDGE
+region          edge_x1       block 21 EDGE EDGE EDGE ${topoffrozen} EDGE
+region          edge_y0       block EDGE EDGE 2 EDGE ${topoffrozen} EDGE
+region          edge_y1       block EDGE EDGE EDGE 21 ${topoffrozen} EDGE
+
+# redo groups
+group           frozen_g       region frozen_r 
+group           not_frozen_all region not_frozen_r
+group           not_frozen_cu  subtract not_frozen_all ion_and_neu
+group           bath_x0      dynamic all region edge_x0
+group           bath_x1      dynamic all region edge_x1
+group           bath_y0      dynamic all region edge_y0
+group           bath_y1      dynamic all region edge_y1
+group           substrate_g  dynamic all region substrate_r
+
+# turning off interaction among the frozen atoms themselves, but keep the interaction between these and the rest
+# so that the integrated portion of the slab can still feel the non-integrated
+# likewise the reverse interaction is felt but these atoms are excluded from time integration and cannot move
+# neigh_modify    every 10 delay 0 check no exclude group frozen_g frozen_g
+neigh_modify    every 1 delay 0 check no
+
+# redo computes
+compute         sub_temp substrate_g temp/partial 1 1 0 
+compute_modify  sub_temp dynamic/dof yes
+
+# redo fixes
+fix             clean_bot ion_and_neu evaporate 100 20 bot 1234 molecule no
+fix             clean_top all evaporate 100 20 top_evap 1234 molecule no
+
+fix             sub_recenter substrate_g momentum 100 linear 0 0 1
+fix             not_frozen_nve not_frozen_cu nve
+fix             ion_and_neu_nve ion_and_neu nve
+
+fix             frozen_f frozen_g setforce 0 0 0
+fix             fix_temp_x0 bath_x0 temp/berendsen ${target_temp} ${target_temp} $(100.0*dt)
+fix             fix_temp_x1 bath_x1 temp/berendsen ${target_temp} ${target_temp} $(100.0*dt)
+fix             fix_temp_y0 bath_y0 temp/berendsen ${target_temp} ${target_temp} $(100.0*dt)
+fix             fix_temp_y1 bath_y1 temp/berendsen ${target_temp} ${target_temp} $(100.0*dt)
+
+# zero velocity on newly frozen group
+velocity        frozen_g set 0 0 0 
+
