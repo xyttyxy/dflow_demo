@@ -1,0 +1,12 @@
+* dflow:
+** Problem
+- In MD simulations of plasma there are a few parameters that needs to be changed from run to run. The LAMMPS script I use for this is fairly complex, reaching over 200 lines with nested loops and python embedding. While I try to set these parameters upfront in the input scripts, sometimes this is not possible due to the dependence of simulation setup on some parameter value. For instance, using fast ions necessistates using an inner loop to decrease the time steps when fast ions are impacting and increase the steps sizes back up when impact is over. Otherwise, the non-smoothness of the neural network PES breaks energy conservation.
+
+- Such nuances lead to a multitude of lammps input scripts differing slightly. This is difficult to maintain and prone to error (forgetting to change some part of the script 100+ lines down)
+  
+** Solution
+1. Decouple the parameter settings from simulation control. This is done independently of dflow, by separating the simulation scripts into sections.
+2. Use dflow to programmatically chain the sections together. This way the MD setup is generated when simulation is run. Changes to the sections will automatically reflect across all simulations. 
+
+** demo.py
+1. Right now it has only 1 step, make-lammpsin performs the input script chaining. It can also make sensible choices for the proccessing-domain mapping, based a-priori knowledge of the structure (a large slab). 
